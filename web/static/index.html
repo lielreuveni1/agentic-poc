@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Repo Security Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f5f8; --card: #ffffff; --text: #101828; --muted: #667085; --faint: #98a2b3; --border: #e6e8ec; --hover: #f8f9fb;
+    --accent: #5b4cf0; --accent-soft: #eeecfe;
+    --critical: #d92d20; --high: #e8590c; --medium: #c98a04; --low: #12805c; --unknown: #667085;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 2px 8px rgba(16, 24, 40, .05);
+    --radius: 14px;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0c0e13; --card: #151821; --text: #eceef2; --muted: #9aa3b2; --faint: #6b7385; --border: #252a36; --hover: #1b1f2a;
+      --accent: #8e83ff; --accent-soft: #221f3d;
+      --critical: #f97066; --high: #fd853a; --medium: #fdb022; --low: #3ccb7f; --unknown: #9aa3b2;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4); }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 1160px; margin: 0 auto; padding: 0 16px 64px; }
+  h2 { font-size: 20px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 16px; }
+  a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+  code { font-family: var(--mono); font-size: 12.5px; }
+  .muted { color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px; margin-top: 16px; }
+  .err { color: var(--critical); margin-top: 10px; font-weight: 500; }
+
+  /* header + search */
+  header { display: flex; align-items: center; gap: 12px; padding: 28px 0 6px; }
+  .logo { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; color: #fff; flex: none;
+    background: linear-gradient(135deg, var(--accent), #8b5cf6); box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+  header h1 { font-size: 26px; font-weight: 800; letter-spacing: -.02em; margin: 0; line-height: 1.1; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+  form { display: flex; align-items: center; gap: 8px; margin-top: 18px; padding: 6px 6px 6px 16px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 999px; box-shadow: var(--shadow); transition: border-color .15s, box-shadow .15s; }
+  form:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  form svg { color: var(--faint); flex: none; }
+  form input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 15px; padding: 8px 4px; }
+  form button { border: 0; border-radius: 999px; padding: 10px 22px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; transition: filter .15s; }
+  form button:hover { filter: brightness(1.08); } form button:disabled { opacity: .6; cursor: default; }
+
+  /* progress */
+  .bar { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; margin: 6px 0 18px; }
+  .bar > div { height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), #8b5cf6); transition: width .5s ease; }
+  .steps { display: grid; gap: 12px; }
+  .step { display: flex; gap: 12px; align-items: center; }
+  .step .ic { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; flex: none;
+    border: 2px solid var(--border); color: var(--faint); }
+  .step.done .ic { background: var(--low); border-color: var(--low); color: #fff; }
+  .step.failed .ic { background: var(--critical); border-color: var(--critical); color: #fff; }
+  .step.running .ic { border-color: var(--accent-soft); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+  .step.pending { color: var(--faint); }
+  .step .detail { color: var(--muted); font-size: 13px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* verdict */
+  .verdict { border-left: 5px solid var(--c); }
+  .verdict .top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .level { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 12px;
+    letter-spacing: .04em; text-transform: uppercase; color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); }
+  .level::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+  .ai-badge { font-size: 12px; font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 3px 10px; }
+  .rules-badge { font-size: 12px; font-weight: 500; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; }
+  .action .why { font-size: 13.5px; margin-top: 6px; padding: 6px 10px; border-radius: 8px; background: var(--accent-soft); color: var(--text); }
+  .spark { color: var(--accent); }
+  .repo { font-family: var(--mono); font-size: 12.5px; color: var(--muted); background: var(--hover); border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; }
+  .headline { font-size: 23px; font-weight: 700; letter-spacing: -.015em; line-height: 1.3; margin: 0 0 6px; }
+  .note { background: color-mix(in srgb, var(--medium) 12%, transparent); border-radius: 10px; padding: 10px 14px; margin-top: 12px; font-size: 14px; }
+  .details { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .details summary { cursor: pointer; font-weight: 500; width: fit-content; }
+  .details div { padding: 1px 0; }
+
+  /* layout */
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 390px; column-gap: 18px; align-items: start; }
+  .side { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
+  @media (max-width: 880px) { .cols { grid-template-columns: 1fr; } .side { position: static; max-height: none; } }
+
+  /* severity squares */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 540px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile { all: unset; box-sizing: border-box; cursor: pointer; position: relative; overflow: hidden; border-radius: 12px; padding: 16px 16px 14px;
+    display: flex; flex-direction: column; gap: 6px; background: var(--card); border: 1px solid var(--border); transition: transform .12s, box-shadow .12s, background .12s; }
+  .tile::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--c); }
+  .tile:hover { transform: translateY(-2px); box-shadow: 0 6px 16px color-mix(in srgb, var(--c) 18%, transparent); }
+  .tile.open { background: color-mix(in srgb, var(--c) 9%, var(--card)); border-color: var(--c); box-shadow: 0 0 0 1px var(--c); }
+  .tile.empty { cursor: default; opacity: .5; } .tile.empty:hover { transform: none; box-shadow: none; }
+  .tile .lbl { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--c); }
+  .tile .n { font-size: 36px; font-weight: 800; letter-spacing: -.03em; line-height: 1; color: var(--text); }
+  .tile .sub { font-size: 12px; color: var(--muted); }
+  .tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hint { font-size: 13px; color: var(--faint); margin-top: 10px; }
+
+  /* findings */
+  .group { margin-top: 20px; }
+  .group h3 { font-size: 16px; font-weight: 700; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .group h3 label { font-weight: 500; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .finding { border-radius: 10px; }
+  .finding + .finding { border-top: 1px solid var(--border); }
+  .finding summary { cursor: pointer; display: flex; gap: 12px; align-items: center; list-style: none; padding: 11px 10px; border-radius: 10px; }
+  .finding summary:hover { background: var(--hover); }
+  .finding summary::-webkit-details-marker { display: none; }
+  .finding summary::before { content: ''; width: 6px; height: 6px; border-right: 2px solid var(--faint); border-bottom: 2px solid var(--faint); transform: rotate(-45deg); transition: transform .15s; flex: none; }
+  .finding[open] summary::before { transform: rotate(45deg); }
+  .finding .fid { font-family: var(--mono); font-size: 12px; color: var(--faint); min-width: 26px; }
+  .finding .what { flex: 1; min-width: 0; }
+  .finding .ver { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  .chip { font-size: 12px; font-weight: 600; white-space: nowrap; border-radius: 999px; padding: 2px 10px; }
+  .chip.fix { color: var(--low); background: color-mix(in srgb, var(--low) 12%, transparent); }
+  .chip.rotate { color: var(--high); background: color-mix(in srgb, var(--high) 12%, transparent); }
+  .chip.nofix { color: var(--muted); background: var(--hover); }
+  .tag { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--hover); border: 1px solid var(--border); border-radius: 6px; padding: 0 6px; margin-left: 6px; white-space: nowrap; }
+  .finding .body { padding: 2px 10px 12px 44px; font-size: 14px; }
+  .adv { padding: 10px 0; } .adv + .adv { border-top: 1px dashed var(--border); }
+  .adv .ids { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+  /* actions */
+  .action { padding: 14px 0; }
+  .action + .action { border-top: 1px solid var(--border); }
+  .action:first-of-type { padding-top: 0; }
+  .action label { display: flex; gap: 12px; cursor: pointer; align-items: flex-start; }
+  .action input { appearance: none; flex: none; width: 20px; height: 20px; margin: 1px 0 0; border: 2px solid var(--border); border-radius: 50%;
+    display: grid; place-items: center; cursor: pointer; transition: all .15s; }
+  .action input:hover { border-color: var(--accent); }
+  .action input:checked { background: var(--accent); border-color: var(--accent); }
+  .action input:checked::after { content: '✓'; color: #fff; font-size: 11px; font-weight: 800; }
+  .action .title { font-weight: 600; line-height: 1.4; }
+  .action .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 12.5px; color: var(--muted); }
+  .sev { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); border-radius: 999px; padding: 1px 8px; }
+  .effort { font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; }
+  .action .detail { font-size: 13.5px; color: var(--muted); margin-top: 6px; }
+  .action.done .title { text-decoration: line-through; color: var(--faint); }
+  .action.done .meta, .action.done .detail { opacity: .6; }
+  .count { font-size: 13px; font-weight: 600; color: var(--muted); background: var(--hover); border-radius: 999px; padding: 1px 9px; margin-left: 6px; vertical-align: 2px; }
+
+  /* history */
+  .history h2 { font-size: 16px; margin-bottom: 8px; }
+  .history a { display: flex; justify-content: space-between; gap: 12px; padding: 8px 10px; border-radius: 8px; color: var(--text); }
+  .history a:hover { background: var(--hover); text-decoration: none; }
+  .history .when { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>
+    <div><h1>Repo Security Review</h1>
+    <p>Paste a GitHub repository. We check dependencies and secrets, then tell you what matters and what to do first.</p></div>
+  </header>
+  <form id="form">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input type="text" id="url" placeholder="https://github.com/owner/repo" autocomplete="off" required>
+    <button id="go">Scan</button>
+  </form>
+  <div id="formErr" class="err"></div>
+  <div id="view"></div>
+  <div id="history" class="card history" hidden></div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const LEVELS = ['critical', 'high', 'medium', 'low'];
+const bucket = f => LEVELS.includes(f.severity) ? f.severity : 'low'; // "unknown" is shown with low
+const noise = f => f.dev || f.test_path;
+const cmpVer = (a, b) => { const p = v => v.replace(/^v/, '').split(/[.-]/).map(n => parseInt(n) || 0); const x = p(a), y = p(b); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0); return 0; };
+const rank = s => ({critical: 4, high: 3, medium: 2, low: 1}[s] || 0);
+const icons = {pending: '○', running: '◐', done: '✓', failed: '✕'};
+let timer, current;
+
+$('#form').onsubmit = async e => {
+  e.preventDefault();
+  $('#formErr').textContent = ''; $('#go').disabled = true;
+  try {
+    const r = await fetch('/api/scans', {method: 'POST', body: JSON.stringify({repo_url: $('#url').value})});
+    const body = await r.json();
+    if (!r.ok) throw new Error(body.error);
+    location.hash = body.id;
+  } catch (err) { $('#formErr').textContent = err.message; }
+  $('#go').disabled = false;
+};
+
+window.onhashchange = () => open(location.hash.slice(1));
+open(location.hash.slice(1));
+
+async function open(id) {
+  clearTimeout(timer);
+  if (!id) { $('#view').innerHTML = ''; return history(); }
+  const r = await fetch('/api/scans/' + id);
+  if (!r.ok) { $('#view').innerHTML = `<div class="card err">Scan not found.</div>`; return; }
+  const scan = await r.json();
+  if (scan.report) {
+    // Render a finished report once; re-rendering would reset what the user expanded.
+    if (current !== scan.id) { current = scan.id; renderReport(scan); }
+    return history();
+  }
+  current = null;
+  renderProgress(scan);
+  if (scan.status === 'queued' || scan.status === 'running') timer = setTimeout(() => open(id), 1000);
+  else history();
+}
+
+function repoName(s) { return esc(s.repo_url.replace('https://github.com/', '')) + (s.commit ? ' @ ' + s.commit.slice(0, 7) : ''); }
+
+function renderProgress(s) {
+  const ic = {pending: '', running: '', done: '✓', failed: '✕'};
+  $('#view').innerHTML = `<div class="card">
+    <h2>Scanning <span class="repo">${repoName(s)}</span></h2>
+    <div class="bar"><div style="width:${s.progress}%"></div></div>
+    <div class="steps">${s.stages.map(st => `<div class="step ${st.status}"><span class="ic">${ic[st.status]}</span>
+      <span>${esc(st.label)}${st.detail ? ` <span class="detail">· ${esc(st.detail)}</span>` : ''}</span></div>`).join('')}</div>
+    ${s.status === 'failed' ? `<div class="err">Scan failed: ${esc(s.error)}</div>` : ''}
+  </div>`;
+}
+
+function renderReport(s) {
+  const r = s.report;
+  const done = loadDone(s.id);
+  const byId = Object.fromEntries(r.findings.map(f => [f.id, f]));
+  const by = Object.fromEntries(LEVELS.map(l => [l, r.findings.filter(f => bucket(f) === l)]));
+  const worst = ids => ids.map(i => byId[i]).filter(Boolean).reduce((w, f) => rank(f.severity) > rank(w) ? f.severity : w, 'unknown');
+
+  // The big number is what clicking shows by default (shipped code); dev/test is a footnote.
+  const tile = l => {
+    const all = by[l], real = all.filter(f => !noise(f)).length, extra = all.length - real;
+    return `<button class="tile ${all.length ? '' : 'empty'}" data-tile="${l}" style="--c:var(--${l})" ${all.length ? '' : 'disabled'} aria-expanded="false">
+      <span class="lbl">${l}</span>
+      <span class="n">${real}</span>
+      <span class="sub">${extra ? `+${extra} in dev/test` : all.length ? 'all in shipped code' : 'none found'}</span>
+    </button>`;
+  };
+
+  // One row per secret, and one row per package (all its versions and advisories at this severity).
+  const rows = list => {
+    const out = [], byPkg = {};
+    for (const f of list) {
+      if (f.kind === 'secret') { out.push([f]); continue; }
+      const key = `${f.ecosystem}/${f.package}/${noise(f)}`;
+      if (!byPkg[key]) out.push(byPkg[key] = []);
+      byPkg[key].push(f);
+    }
+    return out;
+  };
+  const tags = f => `${f.dev ? '<span class="tag">dev</span>' : ''}${f.test_path ? '<span class="tag">test/example</span>' : ''}`;
+  const refs = f => (f.references || []).map(u => `<div><a href="${esc(u)}" target="_blank" rel="noopener">${esc(u)}</a></div>`).join('');
+
+  const row = fs => {
+    const f = fs[0], ids = fs.map(x => x.id).join(' ');
+    const attrs = `class="finding" data-ids="${ids}" data-noise="${noise(f) ? 1 : 0}"`;
+    if (f.kind === 'secret') return `
+    <details ${attrs}>
+      <summary><span class="fid">${f.id}</span>
+        <span class="what"><b>${esc(f.title)}</b> <span class="muted">${esc(f.location)}</span>${tags(f)}</span>
+        <span class="chip rotate">rotate</span></summary>
+      <div class="body">${esc(f.description)}</div>
+    </details>`;
+
+    // The same advisory often hits several installed versions: show it once.
+    const advs = [], byAdv = {};
+    for (const x of fs) {
+      const k = x.advisories?.[0] || x.id;
+      if (!byAdv[k]) advs.push(byAdv[k] = []);
+      byAdv[k].push(x);
+    }
+    const versions = [...new Set(fs.map(x => x.version))];
+    const fixes = fs.map(x => x.fixed_in).filter(Boolean);
+    const fix = fixes.length === fs.length ? fixes.reduce((m, v) => cmpVer(v, m) > 0 ? v : m) : '';
+    const issue = advs.length === 1 ? esc(f.title) : `${advs.length} advisories`;
+    return `
+    <details ${attrs}>
+      <summary><span class="fid">${fs.length === 1 ? f.id : ''}</span>
+        <span class="what"><b>${esc(f.package)}</b> <span class="ver">${versions.map(esc).join(', ')}</span> <span class="muted">·</span> ${issue}${tags(f)}</span>
+        ${fix ? `<span class="chip fix">fix ${esc(fix)}</span>` : '<span class="chip nofix">no fix yet</span>'}</summary>
+      <div class="body">
+        ${advs.map(xs => { const x = xs[0]; return `<div class="adv">
+          <div><b>${esc(x.title)}</b> <span class="muted">· ${xs.map(y => esc(y.version) + (y.fixed_in ? ' → ' + esc(y.fixed_in) : '')).join(', ')}</span></div>
+          <div class="ids">${xs.map(y => y.id).join(', ')} · ${(x.advisories || []).map(esc).join(' · ')} · ${[...new Set(xs.map(y => y.location))].map(l => `<code>${esc(l)}</code>`).join(', ')}</div>
+          ${advs.length === 1 && x.description ? `<div style="white-space:pre-wrap;margin-top:6px">${esc(x.description)}</div>` : ''}
+          ${refs(x)}
+        </div>`; }).join('')}
+      </div>
+    </details>`;
+  };
+
+  const group = l => {
+    const real = by[l].filter(f => !noise(f)).length, extra = by[l].length - real;
+    return `
+    <div class="group" data-group="${l}" hidden>
+      <h3><span><span class="sev" style="--c:var(--${l})">${l}</span> <span class="count">${real}</span></span>
+        ${extra ? `<label><input type="checkbox" data-noise-toggle> show dev/test (+${extra})</label>` : ''}</h3>
+      ${rows(by[l]).map(row).join('')}
+    </div>`;
+  };
+
+  // With an AI review, show Claude's "why it matters" (from the risk that shares findings with the action)
+  // instead of the scanner's severity pill, which can contradict Claude's judgement.
+  const ai = r.reviewed_by !== 'rules';
+  const why = a => ai ? r.top_risks?.find(k => k.finding_ids.some(id => a.finding_ids?.includes(id)))?.why : '';
+
+  const action = (a, i) => {
+    const sev = worst(a.finding_ids || []), n = a.finding_ids?.length || 0, w = why(a);
+    return `
+    <div class="action ${done[i] ? 'done' : ''}"><label><input type="checkbox" data-a="${i}" ${done[i] ? 'checked' : ''} aria-label="Mark done">
+      <span>
+        <div class="title">${esc(a.title)}</div>
+        <div class="meta">
+          ${!ai && sev !== 'unknown' ? `<span class="sev" style="--c:var(--${sev})">${sev}</span>` : ''}
+          ${a.effort ? `<span class="effort">${esc(a.effort)}</span>` : ''}
+          ${n ? `<a href="#" data-f="${a.finding_ids[0]}">${n} ${n === 1 ? 'finding' : 'findings'}</a>` : ''}
+        </div>
+        ${w ? `<div class="why"><span class="spark">✦</span> ${esc(w)}</div>` : ''}
+        ${a.detail ? `<div class="detail">${esc(a.detail)}</div>` : ''}
+      </span></label></div>`;
+  };
+
+  const st = r.stats;
+  const lvl = r.risk_level === 'unknown' ? 'low' : r.risk_level;
+  $('#view').innerHTML = `
+  <div class="cols">
+    <div>
+      <div class="card verdict" style="--c:var(--${lvl})">
+        <div class="top">
+          <span class="level">${r.risk_level === 'unknown' ? 'clean' : esc(r.risk_level) + ' risk'}</span>
+          <span class="repo">${repoName(s)}</span>
+          ${ai ? `<span class="ai-badge" title="${esc(r.reviewed_by)}">✦ AI-assisted review</span>` : '<span class="rules-badge">Rule-based review</span>'}
+        </div>
+        <div class="headline">${esc(r.headline)}</div>
+        <div class="muted">${esc(r.summary)}</div>
+        <details class="details"><summary>Scan details</summary>
+          ${ai ? `<div>Reviewed by ${esc(r.reviewed_by)}</div>` : ''}
+          ${s.stages.map(x => `<div>${icons[x.status]} ${esc(x.label)}${x.detail ? ' · ' + esc(x.detail) : ''}</div>`).join('')}
+          <div>${st.packages} packages checked · ${st.vulnerable_packages} vulnerable · ${st.vulnerabilities} known vulnerabilities · ${st.secrets} possible secrets</div>
+        </details>
+        ${(r.notes || []).map(n => `<div class="note">${esc(n)}</div>`).join('')}
+      </div>
+      <div class="card">
+        <h2>Findings by severity</h2>
+        <div class="tiles">${LEVELS.map(tile).join('')}</div>
+        ${r.findings.length ? '<div class="hint">Click a square to see its findings.</div>' : ''}
+        ${LEVELS.map(group).join('')}
+      </div>
+    </div>
+
+    <div class="card side">
+      <h2>What to do next${r.next_actions?.length ? `<span class="count">${r.next_actions.length}</span>` : ''}</h2>
+      ${r.next_actions?.length ? r.next_actions.map(action).join('') : '<div class="muted">Nothing to do right now.</div>'}
+    </div>
+  </div>`;
+  bindReport(s.id);
+}
+
+function bindReport(id) {
+  const applyNoise = g => g.querySelectorAll('.finding').forEach(el =>
+    el.hidden = el.dataset.noise === '1' && !g.querySelector('[data-noise-toggle]')?.checked);
+  const setOpen = (level, open) => {
+    if (open) LEVELS.filter(l => l !== level).forEach(l => setOpen(l, false)); // one severity at a time
+    const g = $(`[data-group="${level}"]`), t = $(`[data-tile="${level}"]`);
+    g.hidden = !open; t.classList.toggle('open', open); t.setAttribute('aria-expanded', open);
+    if (open) applyNoise(g);
+  };
+
+  $$('[data-tile]').forEach(t => t.onclick = () => setOpen(t.dataset.tile, !t.classList.contains('open')));
+  $$('[data-group]').forEach(g => {
+    const cb = g.querySelector('[data-noise-toggle]');
+    if (cb) cb.onchange = () => applyNoise(g);
+    // If everything in a level is dev/test, show it rather than an empty list.
+    if (![...g.querySelectorAll('.finding')].some(f => f.dataset.noise === '0') && cb) cb.checked = true;
+  });
+
+  $$('[data-a]').forEach(cb => cb.onchange = () => {
+    const d = loadDone(id); d[cb.dataset.a] = cb.checked;
+    try { localStorage.setItem('done-' + id, JSON.stringify(d)); } catch {}
+    cb.closest('.action').classList.toggle('done', cb.checked);
+  });
+
+  // "Based on D3" opens that finding's severity square and scrolls to it.
+  $$('[data-f]').forEach(a => a.onclick = e => {
+    e.preventDefault();
+    const el = $(`.finding[data-ids~="${a.dataset.f}"]`); if (!el) return;
+    const g = el.closest('[data-group]');
+    setOpen(g.dataset.group, true);
+    el.hidden = false; el.open = true;
+    el.scrollIntoView({behavior: 'smooth', block: 'center'});
+  });
+}
+
+function loadDone(id) { try { return JSON.parse(localStorage.getItem('done-' + id)) || {}; } catch { return {}; } }
+
+async function history() {
+  const scans = await (await fetch('/api/scans')).json();
+  $('#history').hidden = !scans.length;
+  $('#history').innerHTML = '<h2>Recent scans</h2>' + scans.map(s =>
+    `<a href="#${s.id}"><span>${esc(s.repo_url.replace('https://github.com/', ''))}</span><span class="when">${esc(s.status)} · ${new Date(s.created_at).toLocaleTimeString()}</span></a>`).join('');
+}
+</script>
+</body>
+</html>
